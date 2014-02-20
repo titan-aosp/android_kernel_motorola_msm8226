@@ -40,7 +40,6 @@ static DEFINE_MUTEX(mdss_mdp_smp_lock);
 static int mdss_mdp_pipe_free(struct mdss_mdp_pipe *pipe);
 static struct mdss_mdp_pipe *mdss_mdp_pipe_search_by_client_id(
 	struct mdss_data_type *mdata, int client_id);
-static int mdss_mdp_pipe_fetch_halt(struct mdss_mdp_pipe *pipe);
 
 static inline void mdss_mdp_pipe_write(struct mdss_mdp_pipe *pipe,
 				       u32 reg, u32 val)
@@ -727,7 +726,7 @@ exit:
  * and would not fetch any more data. This function cannot be called from
  * interrupt context.
  */
-static int mdss_mdp_pipe_fetch_halt(struct mdss_mdp_pipe *pipe)
+int mdss_mdp_pipe_fetch_halt(struct mdss_mdp_pipe *pipe)
 {
 	bool is_idle;
 	int rc = 0;
