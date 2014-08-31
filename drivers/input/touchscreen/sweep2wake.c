@@ -248,7 +248,7 @@ static void detect_sweep2wake_h(int x, int y, bool st, bool wake)
 				barrierx[1] = true;
 				if (x > prevx) {
  					if (x > (DEFAULT_S2W_X_MAX - DEFAULT_S2W_X_FINAL)) {
-						if (exec_countx && (jiffies - firsty_time < SWEEP_TIMEOUT)) {
+						if (exec_countx) {
 							pr_info(LOGTAG"sweep right\n");
 								sweep2wake_pwrtrigger();
 								exec_county = false;
@@ -273,7 +273,7 @@ static void detect_sweep2wake_h(int x, int y, bool st, bool wake)
 				barrierx[1] = true;
 				if (x < prevx) {
  					if (x < DEFAULT_S2W_X_FINAL) {
-						if (exec_countx && (jiffies - firsty_time < SWEEP_TIMEOUT)) {
+						if (exec_countx) {
 							pr_info(LOGTAG"sweep left\n");
 						        sweep2wake_pwrtrigger();
 							exec_countx = false;
