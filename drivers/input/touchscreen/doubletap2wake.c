@@ -26,6 +26,7 @@
 #include <linux/init.h>
 #include <linux/err.h>
 #include <linux/input/doubletap2wake.h>
+#include <linux/input/sweep2wake.h>
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 #include <linux/input.h>
@@ -63,7 +64,12 @@ MODULE_LICENSE("GPLv2");
 #define DT2W_FEATHER		200
 #define DT2W_TIME		50
 
+/* Wake Gestures */
+#define WAKE_GESTURE		0x0b
 #define TRIGGER_TIMEOUT		50
+
+static struct input_dev *gesture_dev;
+extern int gestures_switch;
 
 /* Resources */
 int dt2w_switch = DT2W_DEFAULT;
@@ -98,6 +104,26 @@ static int __init read_dt2w_cmdline(char *dt2w)
 	return 1;
 }
 __setup("dt2w=", read_dt2w_cmdline);
+
+/* Wake Gestures */
+void gestures_setdev(struct input_dev *input_device)
+{
+	gesture_dev = input_device;
+	return;
+}
+
+static void report_gesture(int gest)
+{
+        pwrtrigger_time[1] = pwrtrigger_time[0];
+        pwrtrigger_time[0] = jiffies;	
+
+	if (pwrtrigger_time[0] - pwrtrigger_time[1] < TRIGGER_TIMEOUT)
+		return;
+
+	printk("WG: gesture = %d\n", gest);
+	input_report_rel(gesture_dev, WAKE_GESTURE, gest);
+	input_sync(gesture_dev);
+}
 
 /* reset on finger release */
 static void doubletap2wake_reset(void) {
@@ -190,7 +216,11 @@ static void detect_doubletap2wake(int x, int y, bool st)
 		if ((touch_nr > 1)) {
 			pr_info(LOGTAG"Double Tap\n");
 			exec_count = false;
-			doubletap2wake_pwrtrigger();
+			if (gestures_switch) {
+				report_gesture(5);
+			} else {
+				doubletap2wake_pwrtrigger();
+			}
 			doubletap2wake_reset();
 		}
 	}

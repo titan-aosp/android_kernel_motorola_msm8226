@@ -4,6 +4,9 @@
  *
  * Copyright (c) 2013, Dennis Rassmann <showp1984@gmail.com>
  *
+ * Wake Gestures
+ * Copyright (c) 2014, Aaron Segaert <asegaert@gmail.com>
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -64,12 +67,18 @@ MODULE_LICENSE("GPLv2");
 #define DEFAULT_S2W_X_FINAL             160
 #define DEFAULT_S2W_Y_NEXT              120
 
+/* Wake Gestures */
 #define SWEEP_TIMEOUT		30
 #define TRIGGER_TIMEOUT		50
 #define SWEEP_RIGHT		0x01
 #define SWEEP_LEFT		0x02
 #define SWEEP_UP		0x04
 #define SWEEP_DOWN		0x08
+#define WAKE_GESTURE		0x0b
+
+int gestures_switch = 1;
+static struct input_dev *gesture_dev;
+extern void gestures_setdev(struct input_dev * input_device);
 
 /* Resources */
 int s2w_switch = S2W_DEFAULT;
@@ -111,6 +120,19 @@ static int __init read_s2w_cmdline(char *s2w)
 	return 1;
 }
 __setup("s2w=", read_s2w_cmdline);
+
+static void report_gesture(int gest)
+{
+        pwrtrigger_time[1] = pwrtrigger_time[0];
+        pwrtrigger_time[0] = jiffies;	
+
+	if (pwrtrigger_time[0] - pwrtrigger_time[1] < TRIGGER_TIMEOUT)
+		return;
+
+	pr_info(LOGTAG"gesture = %d\n", gest);
+	input_report_rel(gesture_dev, WAKE_GESTURE, gest);
+	input_sync(gesture_dev);
+}
 
 /* PowerKey work func */
 static void sweep2wake_presspwr(struct work_struct * sweep2wake_presspwr_work) {
@@ -181,7 +203,11 @@ static void detect_sweep2wake_v(int x, int y, bool st)
 						if (y < (nexty - DEFAULT_S2W_Y_NEXT)) {
 							if (exec_county && (jiffies - firsty_time < SWEEP_TIMEOUT)) {
 								pr_info(LOGTAG"sweep up\n");
-								sweep2wake_pwrtrigger();
+								if (gestures_switch) {
+									report_gesture(3);
+								} else {
+						                        sweep2wake_pwrtrigger();
+								}
 								exec_county = false;
 							}
 						}
@@ -203,7 +229,11 @@ static void detect_sweep2wake_v(int x, int y, bool st)
 						if (y > (nexty + DEFAULT_S2W_Y_NEXT)) {
 							if (exec_county && (jiffies - firsty_time < SWEEP_TIMEOUT)) {
 								pr_info(LOGTAG"sweep down\n");
-								sweep2wake_pwrtrigger();
+								if (gestures_switch) {
+									report_gesture(4);
+								} else {
+						                        sweep2wake_pwrtrigger();
+								}
 								exec_county = false;
 							}
 						}
@@ -250,7 +280,11 @@ static void detect_sweep2wake_h(int x, int y, bool st, bool wake)
  					if (x > (DEFAULT_S2W_X_MAX - DEFAULT_S2W_X_FINAL)) {
 						if (exec_countx) {
 							pr_info(LOGTAG"sweep right\n");
-								sweep2wake_pwrtrigger();
+								if (gestures_switch && wake) {
+									report_gesture(1);
+								} else {
+						                        sweep2wake_pwrtrigger();
+								}
 								exec_county = false;
 						}
 					}
@@ -275,7 +309,11 @@ static void detect_sweep2wake_h(int x, int y, bool st, bool wake)
  					if (x < DEFAULT_S2W_X_FINAL) {
 						if (exec_countx) {
 							pr_info(LOGTAG"sweep left\n");
-						        sweep2wake_pwrtrigger();
+								if (gestures_switch && wake) {
+									report_gesture(2);
+								} else {
+						                        sweep2wake_pwrtrigger();
+								}
 							exec_countx = false;
 						}
 					}
@@ -610,6 +648,26 @@ static ssize_t s2w_version_dump(struct device *dev,
 static DEVICE_ATTR(sweep2wake_version, (S_IWUSR|S_IRUGO),
 	s2w_version_show, s2w_version_dump);
 
+static ssize_t wake_gestures_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	size_t count = 0;
+	count += sprintf(buf, "%d\n", gestures_switch);
+	return count;
+}
+
+static ssize_t wake_gestures_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	if (buf[0] >= '0' && buf[0] <= '1' && buf[1] == '\n')
+                if (gestures_switch != buf[0] - '0')
+		        gestures_switch = buf[0] - '0';
+	return count;
+}
+
+static DEVICE_ATTR(wake_gestures, (S_IWUSR|S_IRUGO),
+	wake_gestures_show, wake_gestures_dump);
+
 /*
  * INIT / EXIT stuff below here
  */
@@ -664,6 +722,22 @@ static int __init sweep2wake_init(void)
 	if (rc)
 		pr_err("%s: Failed to register s2w_input_handler\n", __func__);
 
+	gesture_dev = input_allocate_device();
+	if (!gesture_dev) {
+		goto err_alloc_dev;
+	}
+
+	gesture_dev->name = "wake_gesture";
+	gesture_dev->phys = "wake_gesture/input0";
+	input_set_capability(gesture_dev, EV_REL, WAKE_GESTURE);
+
+	rc = input_register_device(gesture_dev);
+	if (rc) {
+		pr_err("%s: input_register_device err=%d\n", __func__, rc);
+		goto err_input_dev;
+	}
+	gestures_setdev(gesture_dev);
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	register_early_suspend(&s2w_early_suspend_handler);
 #endif
@@ -685,6 +759,10 @@ static int __init sweep2wake_init(void)
 	rc = sysfs_create_file(android_touch_kobj, &dev_attr_sweep2wake_version.attr);
 	if (rc) {
 		pr_warn("%s: sysfs_create_file failed for sweep2wake_version\n", __func__);
+	}
+	rc = sysfs_create_file(android_touch_kobj, &dev_attr_wake_gestures.attr);
+	if (rc) {
+		pr_warn("%s: sysfs_create_file failed for wake_gestures\n", __func__);
 	}
 
 err_input_dev:
